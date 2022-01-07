@@ -68,22 +68,10 @@ func (s *transferService) SingleTransfer(ctx context.Context, to string, amount 
 		return nil, err
 	}
 	toAddress := common.HexToAddress(to)
-	// paddedToAddress := common.LeftPadBytes(toAddress.Bytes(), 32)
-
-	// transferFnSignature := []byte("transfer(address,uint256)")
-	// hash := sha3.NewLegacyKeccak256()
-	// hash.Write(transferFnSignature)
-	// methodID := hash.Sum(nil)[:4]
 
 	amountTransfer := utils.GetAmountFromTokenAmount(amount, 18)
 	log.Printf("transfer amount: %v", amountTransfer)
-	// paddedAmount := common.LeftPadBytes(amountTransfer.Bytes(), 32)
-
 	data, _ := daiAbi.Pack("transfer", toAddress, amountTransfer)
-	// var data []byte
-	// data = append(data, methodID...)
-	// data = append(data, paddedToAddress...)
-	// data = append(data, paddedAmount...)
 
 	gasLimit, err := infuraClient.EstimateGas(ctx, ethereum.CallMsg{
 		To:   &tokenAddress,
