@@ -5,3 +5,5 @@ type SingleTransferDto struct {
 	ToAddress string `json:"to_address"`
 	Amount    string `json:"amount"`
 }
+
+type MultiTransfer []SingleTransferDto

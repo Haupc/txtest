@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
+	"txtest/abi/daiabi"
 	"txtest/client"
 	"txtest/utils"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -41,6 +41,9 @@ type transferService struct {
 
 func (s *transferService) SingleTransfer(ctx context.Context, to string, amount string) (*types.Transaction, error) {
 	senderPrivateKey, err := crypto.HexToECDSA(client.PRIVATE_KEY_1)
+	daiAbi, _ := daiabi.DaiabiMetaData.GetAbi()
+	tokenAddress := common.HexToAddress("0xaD6D458402F60fD3Bd25163575031ACDce07538D")
+
 	infuraClient := client.GetClient()
 	if err != nil {
 		log.Printf("Error importing private key: %v\n", err)
@@ -65,22 +68,22 @@ func (s *transferService) SingleTransfer(ctx context.Context, to string, amount 
 		return nil, err
 	}
 	toAddress := common.HexToAddress(to)
-	paddedToAddress := common.LeftPadBytes(toAddress.Bytes(), 32)
-	tokenAddress := common.HexToAddress("0xaD6D458402F60fD3Bd25163575031ACDce07538D")
+	// paddedToAddress := common.LeftPadBytes(toAddress.Bytes(), 32)
 
-	transferFnSignature := []byte("transfer(address,uint256)")
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write(transferFnSignature)
-	methodID := hash.Sum(nil)[:4]
+	// transferFnSignature := []byte("transfer(address,uint256)")
+	// hash := sha3.NewLegacyKeccak256()
+	// hash.Write(transferFnSignature)
+	// methodID := hash.Sum(nil)[:4]
 
 	amountTransfer := utils.GetAmountFromTokenAmount(amount, 18)
 	log.Printf("transfer amount: %v", amountTransfer)
-	paddedAmount := common.LeftPadBytes(amountTransfer.Bytes(), 32)
+	// paddedAmount := common.LeftPadBytes(amountTransfer.Bytes(), 32)
 
-	var data []byte
-	data = append(data, methodID...)
-	data = append(data, paddedToAddress...)
-	data = append(data, paddedAmount...)
+	data, _ := daiAbi.Pack("transfer", toAddress, amountTransfer)
+	// var data []byte
+	// data = append(data, methodID...)
+	// data = append(data, paddedToAddress...)
+	// data = append(data, paddedAmount...)
 
 	gasLimit, err := infuraClient.EstimateGas(ctx, ethereum.CallMsg{
 		To:   &tokenAddress,
@@ -90,6 +93,7 @@ func (s *transferService) SingleTransfer(ctx context.Context, to string, amount 
 		log.Printf("Error getting gas limit: %v\n", err)
 		return nil, err
 	}
+
 	tx := types.NewTransaction(nonce, tokenAddress, value, gasLimit, gasPrice, data)
 	chainID, err := infuraClient.NetworkID(ctx)
 	if err != nil {
@@ -108,4 +112,8 @@ func (s *transferService) SingleTransfer(ctx context.Context, to string, amount 
 	}
 	log.Printf("transaction sent: %v\n", signedTx.Hash().Hex())
 	return signedTx, nil
+}
+
+func (s *transferService) MultiTransfer(ctx context.Context) {
+
 }
