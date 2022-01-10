@@ -36,70 +36,83 @@ func SingleTransfer(ctx context.Context, to string, amount string) (*types.Trans
 		log.Printf("Error extract public key from sender private key: %v\n", senderPrivateKey)
 	}
 	fromAddress := crypto.PubkeyToAddress(*senderPublicKeyECDSA)
-
 	value := big.NewInt(0)
-
 	toAddress := common.HexToAddress(to)
 
 	amountTransfer := utils.GetAmountFromTokenAmount(amount, 18)
 	log.Printf("transfer amount: %v", amountTransfer)
-	daiData, _ := daiAbi.Pack("transfer", toAddress, amountTransfer)
 
-	calls := []multicallabi.Struct0{
-		multicallabi.Struct0{
-			Target:   daiAddress,
-			CallData: daiData,
-		},
-		multicallabi.Struct0{
-			Target:   daiAddress,
-			CallData: daiData,
-		},
-	}
-
-	multicallData, err := multicallAbi.Pack("aggregate", calls)
+	// make approve transaction
+	approveAmount := new(big.Int).Mul(amountTransfer, big.NewInt(2))
+	approveTxData, err := daiAbi.Pack("approve", multicallAddress, approveAmount)
 	if err != nil {
-		log.Printf("error packing call data: %v\n", err)
+		log.Printf("Error packing approveTxData: %v\n", err)
 		return nil, err
 	}
-
-	nonce, err := infuraClient.PendingNonceAt(context.Background(), fromAddress)
+	approveTx, err := utils.MakeTransaction(ctx, fromAddress, daiAddress, value, approveTxData)
 	if err != nil {
-		log.Printf("Error getting nonce: %v\n", err)
+		log.Printf("Error making transaction: %v\n", err)
 		return nil, err
 	}
-
-	gasPrice, err := infuraClient.SuggestGasPrice(ctx)
-	if err != nil {
-		log.Printf("Error getting gas price: %v\n", err)
-		return nil, err
-	}
-
-	// gasLimit, err := infuraClient.EstimateGas(ctx, ethereum.CallMsg{
-	// 	To:   &multicallAddress,
-	// 	Data: multicallData,
-	// })
-	// if err != nil {
-	// 	log.Printf("Error getting gas limit: %v\n", err)
-	// 	return nil, err
-	// }
-
-	tx := types.NewTransaction(nonce, multicallAddress, value, 100000, gasPrice, multicallData)
 	chainID, err := infuraClient.NetworkID(ctx)
 	if err != nil {
 		log.Printf("Error getting chain id: %v\n", err)
 		return nil, err
 	}
-	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), senderPrivateKey)
+	signedApproveTx, err := types.SignTx(approveTx, types.NewEIP155Signer(chainID), senderPrivateKey)
 	if err != nil {
 		log.Printf("Error signing tx: %v\n", err)
 		return nil, err
 	}
-	err = infuraClient.SendTransaction(ctx, signedTx)
+	err = infuraClient.SendTransaction(ctx, signedApproveTx)
 	if err != nil {
 		log.Printf("Error sending transaction: %v\n", err)
 		return nil, err
 	}
+	log.Printf("transaction sent: %v\n", signedApproveTx.Hash().Hex())
 
-	log.Printf("transaction sent: %v\n", signedTx.Hash().Hex())
-	return signedTx, nil
+	// make transfer transaction
+	transferData, err := daiAbi.Pack("transferFrom", fromAddress, toAddress, amountTransfer)
+	transferData2, err := daiAbi.Pack("transferFrom", fromAddress, toAddress, amountTransfer)
+
+	if err != nil {
+		log.Printf("error packing transfer data: %v\n", err)
+		return nil, err
+	}
+	calls := []multicallabi.Struct0{
+		multicallabi.Struct0{
+			Target:   daiAddress,
+			CallData: transferData,
+		},
+		multicallabi.Struct0{
+			Target:   daiAddress,
+			CallData: transferData2,
+		},
+	}
+	multicallTxData, err := multicallAbi.Pack("aggregate", calls)
+	if err != nil {
+		log.Printf("error packing multicall tx data: %v\n", err)
+		return nil, err
+	}
+	multicallTx, err := utils.MakeTransaction(ctx, fromAddress, multicallAddress, value, multicallTxData)
+	if err != nil {
+		log.Printf("error making transaction: %v\n", err)
+		return nil, err
+	}
+	chainID2, err := infuraClient.NetworkID(ctx)
+	if err != nil {
+		log.Printf("Error getting chain id: %v\n", err)
+		return nil, err
+	}
+	signedMulticallTx, err := types.SignTx(multicallTx, types.NewEIP155Signer(chainID2), senderPrivateKey)
+	if err != nil {
+		log.Printf("Error signing tx: %v\n", err)
+		return nil, err
+	}
+	err = infuraClient.SendTransaction(ctx, signedMulticallTx)
+	if err != nil {
+		log.Printf("error se transaction: %v\n", err)
+	}
+	log.Printf("transaction sent: %v\n", signedMulticallTx.Hash().Hex())
+	return signedMulticallTx, nil
 }
