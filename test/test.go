@@ -5,8 +5,7 @@ import (
 	"crypto/ecdsa"
 	"log"
 	"math/big"
-	"txtest/abi/daiabi"
-	"txtest/abi/multicallabi"
+	"txtest/abi"
 	"txtest/client"
 	"txtest/utils"
 
@@ -15,15 +14,36 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func main() {
-	SingleTransfer(context.Background(), "0x0A7bAB86900B6F0500C37cf91D576DA93098B419", "2.22")
+var (
+	addrAndAmountEthTransfer = map[string]string{
+		"0x627f2A6283616956C9810c66fec47108CE7A0b42": "0.09",
+		"0x64A57E165139480e0E7fC9263D61f196903C2c09": "0.08",
+		"0x5fe26031Afb7a43fBBD17b08b6E73cf9dB7939ed": "0.07",
+	}
+
+	addrAndAmountRopstenTransfers = map[string]string{
+		"0x6B2C5508491D5d5F1D61fC782148Ef55b0b94f8A": "0.03",
+		"0x0A7bAB86900B6F0500C37cf91D576DA93098B419": "0.02",
+	}
+)
+
+func CheckError(err error) {
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
-func SingleTransfer(ctx context.Context, to string, amount string) (*types.Transaction, error) {
+
+func main() {
+	multiTransferERC20()
+}
+
+func multiTransferERC20() (*types.Transaction, error) {
+	ctx := context.Background()
 	senderPrivateKey, err := crypto.HexToECDSA(client.PRIVATE_KEY_1)
-	daiAbi, _ := daiabi.DaiabiMetaData.GetAbi()
-	multicallAbi, _ := multicallabi.MulticallabiMetaData.GetAbi()
-	daiAddress := common.HexToAddress("0xaD6D458402F60fD3Bd25163575031ACDce07538D")
-	multicallAddress := common.HexToAddress("0x53c43764255c17bd724f74c4ef150724ac50a3ed")
+	daiAbi, _ := abi.DaiMetaData.GetAbi()
+	daiAddress := common.HexToAddress("0xad6d458402f60fd3bd25163575031acdce07538d")
+	multiSendAbi, _ := abi.MultisendMetaData.GetAbi()
+	multiSendSCAddress := common.HexToAddress("0x6A9DCFFbE376D5e529fD9461760E815f87A53d5B")
 	infuraClient := client.GetClient()
 	if err != nil {
 		log.Printf("Error importing private key: %v\n", err)
@@ -37,14 +57,10 @@ func SingleTransfer(ctx context.Context, to string, amount string) (*types.Trans
 	}
 	fromAddress := crypto.PubkeyToAddress(*senderPublicKeyECDSA)
 	value := big.NewInt(0)
-	toAddress := common.HexToAddress(to)
-
-	amountTransfer := utils.GetAmountFromTokenAmount(amount, 18)
-	log.Printf("transfer amount: %v", amountTransfer)
+	listAddr, listAmount, totalAmount := getAddressAndAmount(addrAndAmountRopstenTransfers)
 
 	// make approve transaction
-	approveAmount := new(big.Int).Mul(amountTransfer, big.NewInt(2))
-	approveTxData, err := daiAbi.Pack("approve", multicallAddress, approveAmount)
+	approveTxData, err := daiAbi.Pack("approve", multiSendSCAddress, totalAmount)
 	if err != nil {
 		log.Printf("Error packing approveTxData: %v\n", err)
 		return nil, err
@@ -71,48 +87,60 @@ func SingleTransfer(ctx context.Context, to string, amount string) (*types.Trans
 	}
 	log.Printf("transaction sent: %v\n", signedApproveTx.Hash().Hex())
 
-	// make transfer transaction
-	transferData, err := daiAbi.Pack("transferFrom", fromAddress, toAddress, amountTransfer)
-	transferData2, err := daiAbi.Pack("transferFrom", fromAddress, toAddress, amountTransfer)
-
-	if err != nil {
-		log.Printf("error packing transfer data: %v\n", err)
-		return nil, err
-	}
-	calls := []multicallabi.Struct0{
-		multicallabi.Struct0{
-			Target:   daiAddress,
-			CallData: transferData,
-		},
-		multicallabi.Struct0{
-			Target:   daiAddress,
-			CallData: transferData2,
-		},
-	}
-	multicallTxData, err := multicallAbi.Pack("aggregate", calls)
-	if err != nil {
-		log.Printf("error packing multicall tx data: %v\n", err)
-		return nil, err
-	}
-	multicallTx, err := utils.MakeTransaction(ctx, fromAddress, multicallAddress, value, multicallTxData)
-	if err != nil {
-		log.Printf("error making transaction: %v\n", err)
-		return nil, err
-	}
 	chainID2, err := infuraClient.NetworkID(ctx)
 	if err != nil {
 		log.Printf("Error getting chain id: %v\n", err)
 		return nil, err
 	}
-	signedMulticallTx, err := types.SignTx(multicallTx, types.NewEIP155Signer(chainID2), senderPrivateKey)
+	multiSendTxData, _ := multiSendAbi.Pack("multiERC20Transfer", daiAddress, listAddr, listAmount)
+	multiSendTx, _ := utils.MakeTransaction(ctx, fromAddress, multiSendSCAddress, value, multiSendTxData)
+	signedMultiSendTx, err := types.SignTx(multiSendTx, types.NewEIP155Signer(chainID2), senderPrivateKey)
 	if err != nil {
 		log.Printf("Error signing tx: %v\n", err)
 		return nil, err
 	}
-	err = infuraClient.SendTransaction(ctx, signedMulticallTx)
+	err = infuraClient.SendTransaction(ctx, signedMultiSendTx)
 	if err != nil {
 		log.Printf("error se transaction: %v\n", err)
 	}
-	log.Printf("transaction sent: %v\n", signedMulticallTx.Hash().Hex())
-	return signedMulticallTx, nil
+	log.Printf("transaction sent: %v\n", signedMultiSendTx.Hash().Hex())
+	return signedMultiSendTx, nil
+}
+
+func multiTransferEth() {
+	nodeClient := client.GetClient()
+	multiSendSCAddress := common.HexToAddress("0x6A9DCFFbE376D5e529fD9461760E815f87A53d5B")
+	multisendAbi, err := abi.MultisendMetaData.GetAbi()
+	CheckError(err)
+	privateKey, err := crypto.HexToECDSA(client.PRIVATE_KEY_1)
+	CheckError(err)
+	publicKey := privateKey.Public().(*ecdsa.PublicKey)
+	fromAddress := crypto.PubkeyToAddress(*publicKey)
+	listAddr, listAmount, totalAmount := getAddressAndAmount(addrAndAmountRopstenTransfers)
+	multiSendTxData, err := multisendAbi.Pack("multiTransfer", listAddr, listAmount)
+	CheckError(err)
+
+	multisendTx, err := utils.MakeTransaction(context.Background(), fromAddress, multiSendSCAddress, totalAmount, multiSendTxData)
+	CheckError(err)
+	chainID, err := nodeClient.NetworkID(context.Background())
+	CheckError(err)
+	signedTx, err := types.SignTx(multisendTx, types.NewEIP155Signer(chainID), privateKey)
+	CheckError(err)
+	err = nodeClient.SendTransaction(context.Background(), signedTx)
+	CheckError(err)
+	log.Println("tx sent:", signedTx.Hash().Hex())
+}
+
+func getAddressAndAmount(addrAndAmount map[string]string) ([]common.Address, []*big.Int, *big.Int) {
+	addrs := make([]common.Address, 0)
+	amounts := make([]*big.Int, 0)
+	totalAmount := big.NewInt(0)
+	for addrStr, amountStr := range addrAndAmount {
+		addr := common.HexToAddress(addrStr)
+		amount := utils.GetAmountFromTokenAmount(amountStr, 18)
+		addrs = append(addrs, addr)
+		amounts = append(amounts, amount)
+		totalAmount.Add(totalAmount, amount)
+	}
+	return addrs, amounts, totalAmount
 }

@@ -6,7 +6,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
-	"txtest/abi/daiabi"
+	"txtest/abi"
 	"txtest/client"
 	"txtest/utils"
 
@@ -41,7 +41,7 @@ type transferService struct {
 
 func (s *transferService) SingleTransfer(ctx context.Context, to string, amount string) (*types.Transaction, error) {
 	senderPrivateKey, err := crypto.HexToECDSA(client.PRIVATE_KEY_1)
-	daiAbi, _ := daiabi.DaiabiMetaData.GetAbi()
+	daiAbi, _ := abi.DaiMetaData.GetAbi()
 	tokenAddress := common.HexToAddress("0xaD6D458402F60fD3Bd25163575031ACDce07538D")
 
 	infuraClient := client.GetClient()
@@ -88,7 +88,7 @@ func (s *transferService) SingleTransfer(ctx context.Context, to string, amount 
 
 func (s *transferService) MultiTransfer(ctx context.Context, to string, amount string) (*types.Transaction, error) {
 	senderPrivateKey, err := crypto.HexToECDSA(client.PRIVATE_KEY_1)
-	daiAbi, _ := daiabi.DaiabiMetaData.GetAbi()
+	daiAbi, _ := abi.DaiMetaData.GetAbi()
 	tokenAddress := common.HexToAddress("0xaD6D458402F60fD3Bd25163575031ACDce07538D")
 
 	infuraClient := client.GetClient()
